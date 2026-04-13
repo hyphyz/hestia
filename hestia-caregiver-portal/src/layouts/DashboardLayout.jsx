@@ -4,12 +4,10 @@ import { supabase } from "../supabaseClient";
 import logo from "../assets/HHC.png";
 
 function DashboardLayout({ children }) {
-
   const [role, setRole] = useState(null);
 
   useEffect(() => {
     async function fetchRole() {
-
       const { data: userData } = await supabase.auth.getUser();
       const user = userData?.user;
 
@@ -94,6 +92,21 @@ function DashboardLayout({ children }) {
                 className="block px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-[#1f1f1f] transition"
               >
                 New Patient
+              </Link>
+
+              <Link
+                to="/admin/process-leads"
+                className="block px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-[#1f1f1f] transition"
+              >
+                Process Leads
+              </Link>
+
+              {/* Added: Ranked Leads */}
+              <Link
+                to="/admin/ranked-leads"
+                className="block px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-[#1f1f1f] transition"
+              >
+                Ranked Leads
               </Link>
             </>
           )}
