@@ -3,8 +3,11 @@ import re
 import json
 import io
 import pandas as pd
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, Security, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security.api_key import APIKeyHeader
+from pydantic import BaseModel
+from typing import List, Optional, Dict
 from openai import OpenAI
 from supabase import create_client
 from dotenv import load_dotenv
@@ -18,6 +21,19 @@ load_dotenv(dotenv_path=env_path)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 supabase = create_client(os.getenv("VITE_SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
 
+# --- Security Setup ---
+API_KEY = os.getenv("PROCESSOR_API_KEY")
+API_KEY_NAME = "X-API-Key"
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
+
+async def verify_api_key(api_key_header: str = Security(api_key_header)):
+    if api_key_header != API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Could not validate API key"
+        )
+    return api_key_header
+
 # Fallback cache for missing Zip Codes based on City names
 try:
     with open('ca_city_map.json', 'r') as f:
@@ -28,15 +44,20 @@ except FileNotFoundError:
 
 app = FastAPI()
 
+# 🔒 Restricted CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=[
+        "http://localhost:3000",          # Local dev
+        "http://localhost:5173",          # Vite dev
+        "https://your-vercel-domain.com"  # ⚠️ Update this to your production frontend URL
+    ], 
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["POST", "OPTIONS"],    # Only allow what is needed
+    allow_headers=["*", "X-API-Key"],     # Ensure the custom header is allowed
 )
 
-# --- Helper Functions ---
+# --- Helper Functions (CSV Processor) ---
 def get_ethnicity_batch(candidates):
     if not candidates: return []
     names_list = "\n".join([f"{i+1}. {c['name']}" for i, c in enumerate(candidates)])
@@ -64,7 +85,7 @@ def get_ethnicity_batch(candidates):
     
     try:
         response = client.chat.completions.create(
-            model="gpt-5.4-mini", 
+            model="gpt-4o-mini", 
             messages=[{"role": "user", "content": prompt}]
         )
         raw_text = response.choices[0].message.content.strip()
@@ -93,9 +114,12 @@ def fetch_identity_map():
         print(f"Error fetching from Supabase: {e}")
         return {}
 
-# --- API Endpoint ---
+# --- API Endpoint 1: CSV Processor ---
 @app.post("/api/run-processor")
-async def process_candidates(file: UploadFile = File(...)):
+async def process_candidates(
+    file: UploadFile = File(...),
+    api_key: str = Security(verify_api_key) 
+):
     print(f"\n--- 🚀 Ingesting New Master CSV ---")
     
     contents = await file.read()
@@ -119,9 +143,8 @@ async def process_candidates(file: UploadFile = File(...)):
             skipped_count += 1
             continue
 
-        # Extract Core Data
         phone = str(row.get('phone', row.get('Phone', row.get('Phone Number', '')))).strip()
-        phone = phone.replace("'", "") # Strips the Indeed apostrophe
+        phone = phone.replace("'", "") 
         phone = phone if phone.lower() != 'nan' and phone else None
 
         email = str(row.get('Email', row.get('email', ''))).strip()
@@ -144,12 +167,13 @@ async def process_candidates(file: UploadFile = File(...)):
             "experience_summary": experience_summary if experience_summary.lower() != 'nan' else None,
             "job_applied_for": job_applied_for if job_applied_for.lower() != 'nan' else None,
             "interest_level": interest_level if interest_level.lower() != 'nan' else None,
-            "status": "new"
+            "status": "new",
+            "pipeline_status": "New", # <-- Added default for new ATS tracking
+            "is_archived": False      # <-- Added default so they show up on the frontend
         }
 
         to_be_identified.append(candidate_data)
 
-    # --- AI BATCH IDENTIFICATION ---
     if to_be_identified:
         print(f"--- 🤖 Asking AI to identify ethnicities & confidence for {len(to_be_identified)} new candidates ---")
         batch_size = 10
@@ -191,6 +215,64 @@ async def process_candidates(file: UploadFile = File(...)):
     else:
         return {"status": "success", "message": f"No new profiles found in CSV. Skipped {skipped_count} existing."}
 
+
+# ==========================================
+# --- NEW SECTION: SECURE PATIENT INTAKE ---
+# ==========================================
+
+# 1. Pydantic Schema for strict validation of PHI
+class PatientPayload(BaseModel):
+    first_name: str
+    last_name: str
+    dob: Optional[str] = None
+    gender: Optional[str] = None
+    phone: Optional[str] = None
+    phone_alt: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip: Optional[str] = None
+    location: Optional[str] = None
+    start_of_care: Optional[str] = None
+    needs_since: Optional[str] = None
+    condition: Optional[str] = None
+    condition_details: Optional[str] = None
+    care_type: Optional[str] = None
+    rate: Optional[float] = None
+    transport_reimbursement: Optional[float] = None
+    tasks: List[str] = []
+    candidate_caregivers: List[str] = []
+    preferences: Dict = {}
+    notes: Optional[str] = None
+    schedule: Dict = {}
+
+# 2. API Endpoint 2: Securely saving patient to Supabase
+@app.post("/api/patients/new")
+async def create_new_patient(
+    patient: PatientPayload,
+    api_key: str = Security(verify_api_key) # 🔒 Required to enter
+):
+    print(f"\n--- 🏥 Ingesting New Patient: {patient.first_name} {patient.last_name} ---")
+    
+    try:
+        # Convert validated data to dictionary
+        data = patient.model_dump(exclude_none=False)
+
+        # Insert directly into Supabase (Bypasses RLS securely via backend)
+        response = supabase.table("patients").insert(data).execute()
+
+        return {"status": "success", "message": "Patient securely created."}
+    
+    except Exception as e:
+        print(f"❌ Database Error: {str(e)}")
+        # Do not leak database errors to the frontend
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail="Failed to save patient record."
+        )
+
+# --- Server Execution ---
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

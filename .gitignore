@@ -28,3 +28,5 @@ dist-ssr
 
 # Ignore the sensitive input data
 automation/input/
+
+.vercel
