@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 
-// Dummy Data Arrays - Easy to replace with API data later
 const visitsData = [
   { id: 1, name: "John Doe", time: "9:00 AM" },
   { id: 2, name: "Mary Smith", time: "11:30 AM" },
@@ -18,22 +17,78 @@ const messagesData = [
   { id: 2, sender: "Admin Team", preview: "Your schedule for next week is ready." },
 ];
 
+function StatCard({ title, count, badge, badgeColor, items, isExpanded, onToggle, icon, accentColor }) {
+  return (
+    <div
+      onClick={onToggle}
+      className="bg-white rounded-2xl border cursor-pointer group hover:-translate-y-0.5 transition-all duration-300"
+      style={{
+        borderColor: "#EDE3DC",
+        boxShadow: "0 2px 12px rgba(44, 24, 16, 0.06)"
+      }}
+    >
+      <div className="p-6">
+        <div className="flex items-start justify-between mb-4">
+          <div className="w-11 h-11 rounded-xl flex items-center justify-center"
+            style={{ background: `${accentColor}18` }}>
+            <span style={{ color: accentColor }}>{icon}</span>
+          </div>
+          {badge && (
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg"
+              style={{ background: `${accentColor}15`, color: accentColor }}>
+              {badge}
+            </span>
+          )}
+        </div>
+
+        <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: "#B59890" }}>
+          {title}
+        </p>
+        <p className="text-4xl font-bold" style={{ color: accentColor }}>{count}</p>
+      </div>
+
+      {isExpanded && items && items.length > 0 && (
+        <div className="px-6 pb-5 border-t" style={{ borderColor: "#F5EDE8" }}>
+          <ul className="mt-4 space-y-2">
+            {items.map((item) => (
+              <li
+                key={item.id}
+                onClick={(e) => e.stopPropagation()}
+                className="flex justify-between items-center px-3 py-2.5 rounded-xl transition-colors"
+                style={{ background: "#FAF7F4" }}
+              >
+                <div>
+                  <p className="text-sm font-medium text-[#2C1810]">{item.name || item.title}</p>
+                  {item.description && (
+                    <p className="text-xs mt-0.5" style={{ color: "#B59890" }}>{item.description}</p>
+                  )}
+                  {item.sender && (
+                    <p className="text-xs mt-0.5" style={{ color: "#B59890" }}>{item.preview}</p>
+                  )}
+                </div>
+                {item.time && (
+                  <span className="text-xs font-semibold ml-3 shrink-0" style={{ color: accentColor }}>
+                    {item.time}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Dashboard() {
   const [profileName, setProfileName] = useState(null);
   const [nameVisible, setNameVisible] = useState(false);
+  const [expandedCards, setExpandedCards] = useState({ visits: false, notes: false, messages: false });
 
-  const [expandedCards, setExpandedCards] = useState({
-    visits: false,
-    notes: false,
-    messages: false,
-  });
-
-  // Fetch the user's name/email on load
   useEffect(() => {
     async function getProfile() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-
         if (user) {
           const { data } = await supabase
             .from("caregivers")
@@ -42,167 +97,130 @@ function Dashboard() {
             .single();
 
           let firstName = null;
-
-          if (data?.name) {
-            firstName = data.name.split(" ")[0];
-          } else if (data?.email) {
-            firstName = data.email.split("@")[0];
-          } else if (user.email) {
-            firstName = user.email.split("@")[0];
-          }
+          if (data?.name) firstName = data.name.split(" ")[0];
+          else if (data?.email) firstName = data.email.split("@")[0];
+          else if (user.email) firstName = user.email.split("@")[0];
 
           if (firstName) {
             setProfileName(firstName);
-
-            // trigger fade-in slightly after mount
-            setTimeout(() => {
-              setNameVisible(true);
-            }, 50);
+            setTimeout(() => setNameVisible(true), 50);
           }
         }
       } catch (error) {
         console.error("Error fetching profile:", error);
       }
     }
-
     getProfile();
   }, []);
 
   const toggleCard = (card) => {
-    setExpandedCards((prev) => ({
-      ...prev,
-      [card]: !prev[card],
-    }));
+    setExpandedCards((prev) => ({ ...prev, [card]: !prev[card] }));
   };
 
-  return (
-    <div className="max-w-7xl mx-auto py-6 font-['Inter']">
-      
-      {/* Header */}
-      <div className="mb-10">
-        {/* Back Navigation */}
-        <Link 
-          to="/" 
-          className="inline-flex items-center text-sm text-gray-400 hover:text-white transition-colors mb-4"
-        >
-          <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
-          </svg>
-          Back
-        </Link>
+  const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 
+  return (
+    <div className="max-w-5xl mx-auto">
+
+      {/* Header */}
+      <div className="mb-8">
+        <p className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: "#B59890" }}>
+          {today}
+        </p>
         <h1
-          className={`text-2xl md:text-3xl font-bold text-gray-100 mb-2 tracking-tight capitalize transition-opacity duration-500 ${
+          className={`text-2xl md:text-3xl font-bold text-[#2C1810] tracking-tight capitalize transition-opacity duration-500 ${
             nameVisible ? "opacity-100" : "opacity-0"
           }`}
         >
-          {profileName && `Welcome back, ${profileName}`}
+          {profileName ? `Welcome back, ${profileName}` : "Welcome back"}
         </h1>
-
-        <p className="text-gray-400 text-xs md:text-sm tracking-wide">
-          Here’s an overview of your schedule and tasks for today.
+        <p className="text-sm mt-1" style={{ color: "#8C6B60" }}>
+          Here's a quick overview of your day.
         </p>
       </div>
 
-      {/* Cards Wrapper */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
-        
-        {/* Card 1: Visits */}
-        <div 
-          onClick={() => toggleCard('visits')}
-          className="group relative bg-gradient-to-b from-[#171717] to-[#111111] p-6 rounded-2xl border border-[#2a2a2a] shadow-lg hover:shadow-[0_8px_30px_rgba(167,55,55,0.12)] hover:border-[#a73737]/50 hover:-translate-y-1 transition-all duration-300 overflow-hidden cursor-pointer"
-        >
-          <div className="absolute top-0 right-0 w-24 h-24 bg-[#a73737]/5 rounded-full blur-2xl -mr-8 -mt-8 transition-transform group-hover:scale-150"></div>
+      {/* Quick-action strip */}
+      <div className="flex flex-wrap gap-3 mb-8">
+        {[
+          { label: "My Availability", to: "/schedule", icon: "📅" },
+          { label: "Matches", to: "/patients", icon: "🤝" },
+          { label: "Confirmed Visits", to: "/confirmed-shifts", icon: "✅" },
+          { label: "Profile", to: "/profile", icon: "👤" },
+        ].map((link) => (
+          <Link
+            key={link.to}
+            to={link.to}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border transition-all duration-200 hover:-translate-y-0.5"
+            style={{
+              background: "#fff",
+              borderColor: "#EDE3DC",
+              color: "#2C1810",
+              boxShadow: "0 1px 6px rgba(44,24,16,0.06)"
+            }}
+          >
+            <span>{link.icon}</span>
+            {link.label}
+          </Link>
+        ))}
+      </div>
 
-          <div className="relative z-10 flex justify-between items-start">
-            <div>
-              <h2 className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-1">
-                Today’s Visits
-              </h2>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <StatCard
+          title="Today's Visits"
+          count={visitsData.length}
+          badge="+1 Scheduled"
+          accentColor="#C41858"
+          isExpanded={expandedCards.visits}
+          onToggle={() => toggleCard("visits")}
+          items={visitsData}
+          icon={
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+          }
+        />
 
-              <div className="flex items-baseline gap-3 mt-2">
-                <p className="text-4xl font-bold text-[#a73737]">{visitsData.length}</p>
-                <span className="text-xs font-medium text-[#a73737]/80 bg-[#a73737]/10 px-2 py-1 rounded-md">
-                  +1 Scheduled
-                </span>
-              </div>
-            </div>
-          </div>
+        <StatCard
+          title="Pending Notes"
+          count={notesData.length}
+          badge="Needs Action"
+          accentColor="#E8951B"
+          isExpanded={expandedCards.notes}
+          onToggle={() => toggleCard("notes")}
+          items={notesData}
+          icon={
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          }
+        />
 
-          {expandedCards.visits && (
-            <div className="relative z-10 mt-6 pt-4 border-t border-[#2a2a2a]">
-              <ul className="space-y-3">
-                {visitsData.map((visit) => (
-                  <li 
-                    key={visit.id}
-                    onClick={(e) => e.stopPropagation()}
-                    className="flex justify-between items-center text-sm p-2 bg-[#2a2a2a]/30 rounded-lg hover:bg-[#2a2a2a]/50 transition-colors"
-                  >
-                    <span className="text-gray-300 font-medium">{visit.name}</span>
-                    <span className="text-[#a73737] text-xs font-medium">{visit.time}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
+        <StatCard
+          title="Messages"
+          count={messagesData.length}
+          badge="Unread"
+          accentColor="#6B5B9A"
+          isExpanded={expandedCards.messages}
+          onToggle={() => toggleCard("messages")}
+          items={messagesData}
+          icon={
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+          }
+        />
+      </div>
 
-        {/* Card 2 */}
-        <div 
-          onClick={() => toggleCard('notes')}
-          className="group relative bg-gradient-to-b from-[#171717] to-[#111111] p-6 rounded-2xl border border-[#2a2a2a] shadow-lg hover:shadow-[0_8px_30px_rgba(167,55,55,0.12)] hover:border-[#a73737]/50 hover:-translate-y-1 transition-all duration-300 overflow-hidden cursor-pointer"
-        >
-          <div className="relative z-10">
-            <h2 className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-1">
-              Pending Notes
-            </h2>
-
-            <div className="flex items-baseline gap-3 mt-2">
-              <p className="text-4xl font-bold text-[#a73737]">{notesData.length}</p>
-              <span className="text-xs font-medium text-gray-400 bg-[#2a2a2a] px-2 py-1 rounded-md">
-                Needs Action
-              </span>
-            </div>
-          </div>
-
-          {expandedCards.notes && (
-            <div className="relative z-10 mt-6 pt-4 border-t border-[#2a2a2a]">
-              <ul className="space-y-3">
-                {notesData.map((note) => (
-                  <li 
-                    key={note.id}
-                    onClick={(e) => e.stopPropagation()}
-                    className="flex flex-col gap-1 text-sm p-2 bg-[#2a2a2a]/30 rounded-lg hover:bg-[#2a2a2a]/50 transition-colors"
-                  >
-                    <span className="text-gray-300 font-medium">{note.title}</span>
-                    <span className="text-gray-500 text-xs">{note.description}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-
-        {/* Card 3 */}
-        <div 
-          onClick={() => toggleCard('messages')}
-          className="group relative bg-gradient-to-b from-[#171717] to-[#111111] p-6 rounded-2xl border border-[#2a2a2a] shadow-lg hover:shadow-[0_8px_30px_rgba(167,55,55,0.12)] hover:border-[#a73737]/50 hover:-translate-y-1 transition-all duration-300 overflow-hidden cursor-pointer"
-        >
-          <div className="relative z-10">
-            <h2 className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-1">
-              Messages
-            </h2>
-
-            <div className="flex items-baseline gap-3 mt-2">
-              <p className="text-4xl font-bold text-[#a73737]">{messagesData.length}</p>
-              <span className="flex items-center gap-1 text-xs font-medium text-[#a73737]/80 bg-[#a73737]/10 px-2 py-1 rounded-md">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#a73737] animate-pulse"></span>
-                Unread
-              </span>
-            </div>
-          </div>
-        </div>
-
+      {/* Warm footer message */}
+      <div className="mt-8 px-5 py-4 rounded-2xl border" style={{ background: "#FFF5F0", borderColor: "#F5DDD4" }}>
+        <p className="text-sm" style={{ color: "#8C6B60" }}>
+          <span className="font-semibold" style={{ color: "#C41858" }}>Thank you</span> for the compassionate care you provide every day.
+          Your work makes a real difference in the lives of our patients and their families.
+        </p>
       </div>
     </div>
   );

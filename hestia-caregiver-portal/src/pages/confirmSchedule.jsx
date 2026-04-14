@@ -2,15 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 
-const days = [
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-  "Sunday",
-];
+const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 function formatTime(time24) {
   if (!time24) return "";
@@ -29,23 +21,11 @@ function ConfirmSchedule() {
   useEffect(() => {
     const fetchMyAvailability = async () => {
       try {
-        // 1. Get the logged-in user's ID
         const { data: { user } } = await supabase.auth.getUser();
-        
-        if (!user) {
-          console.error("No user logged in");
-          return;
-        }
-
-        // 2. Fetch ONLY the caregiver record matching this auth_id
+        if (!user) { console.error("No user logged in"); return; }
         const { data: caregiver, error } = await supabase
-          .from("caregivers")
-          .select("*")
-          .eq("auth_id", user.id)
-          .single(); // We use .single() because there should only be one "Me"
-
+          .from("caregivers").select("*").eq("auth_id", user.id).single();
         if (error) throw error;
-
         setMyAvailability(caregiver);
       } catch (err) {
         console.error("Fetch error:", err);
@@ -53,7 +33,6 @@ function ConfirmSchedule() {
         setLoading(false);
       }
     };
-
     fetchMyAvailability();
   }, []);
 
@@ -63,82 +42,122 @@ function ConfirmSchedule() {
     return range.start === "00:00" && (range.end === "24:00" || range.end === "23:30");
   };
 
+  const totalHours = myAvailability ? days.reduce((total, day) => {
+    const slots = myAvailability.available_hours?.[day] || [];
+    return total + slots.reduce((sum, slot) => {
+      if (!slot.start || !slot.end) return sum;
+      const [sh, sm] = slot.start.split(":").map(Number);
+      const [eh, em] = slot.end.split(":").map(Number);
+      return sum + ((eh * 60 + em) - (sh * 60 + sm)) / 60;
+    }, 0);
+  }, 0) : 0;
+
+  const activeDays = myAvailability ? days.filter(day =>
+    (myAvailability.available_hours?.[day] || []).length > 0
+  ).length : 0;
+
   return (
-    <div className="min-h-screen bg-[#0f0f0f] text-gray-100 p-8">
-      <div className="flex items-center justify-between mb-8 w-full max-w-4xl mx-auto">
+    <div className="max-w-3xl mx-auto">
+
+      {/* Header */}
+      <div className="flex items-start justify-between mb-7">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            My Availability
-          </h1>
-          <p className="text-sm text-gray-400 mt-1">
-            This is how your current schedule appears to patients.
+          <h1 className="text-2xl font-bold text-[#2C1810]">My Availability</h1>
+          <p className="text-sm mt-1" style={{ color: "#8C6B60" }}>
+            This is how your schedule appears to the matching system.
           </p>
         </div>
-
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <button
             onClick={() => navigate(-1)}
-            className="px-4 py-2 bg-[#2a2a2a] rounded-lg border border-[#3a3a3a] text-sm hover:bg-[#3a3a3a]"
+            className="px-4 py-2 rounded-xl text-sm font-medium border transition-colors"
+            style={{ borderColor: "#EDE3DC", color: "#2C1810", background: "#fff" }}
           >
             Edit Schedule
           </button>
           <button
             onClick={() => navigate("/dashboard")}
-            className="px-5 py-2 bg-indigo-600 rounded-lg text-sm font-medium hover:bg-indigo-500"
+            className="px-5 py-2 rounded-xl text-sm font-semibold text-white transition-all"
+            style={{
+              background: "linear-gradient(135deg, #C41858, #8B1035)",
+              boxShadow: "0 4px 14px rgba(196, 24, 88, 0.3)"
+            }}
           >
-            Dashboard
+            Go to Dashboard
           </button>
         </div>
       </div>
 
       {loading ? (
-        <div className="flex justify-center items-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
+        <div className="flex items-center justify-center h-64 rounded-2xl border" style={{ background: "#fff", borderColor: "#EDE3DC" }}>
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-8 h-8 rounded-full border-2 border-[#C41858] border-t-transparent animate-spin" />
+            <p className="text-sm" style={{ color: "#8C6B60" }}>Loading your availability...</p>
+          </div>
         </div>
       ) : !myAvailability ? (
-        <div className="max-w-4xl mx-auto text-center py-20 bg-[#141414] rounded-xl border border-[#2a2a2a]">
-          <p className="text-gray-400">Caregiver profile not found.</p>
+        <div className="text-center py-20 rounded-2xl border" style={{ background: "#fff", borderColor: "#EDE3DC" }}>
+          <p style={{ color: "#8C6B60" }}>Caregiver profile not found.</p>
         </div>
       ) : (
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-8 shadow-xl">
-            <div className="flex items-center gap-4 mb-8 pb-6 border-b border-[#2a2a2a]">
-              <div className="w-12 h-12 bg-indigo-600 rounded-full flex items-center justify-center text-xl font-bold">
-                {myAvailability.name?.charAt(0)}
+        <div className="space-y-5">
+
+          {/* Summary Stats */}
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              { label: "Active Days", value: activeDays },
+              { label: "Hours / Week", value: Math.round(totalHours * 10) / 10 },
+              { label: "Max Hours", value: myAvailability.max_hours_per_week || 40 },
+            ].map((stat) => (
+              <div key={stat.label} className="bg-white rounded-2xl border p-4 text-center"
+                style={{ borderColor: "#EDE3DC", boxShadow: "0 1px 8px rgba(44,24,16,0.05)" }}>
+                <p className="text-3xl font-bold" style={{ color: "#C41858" }}>{stat.value}</p>
+                <p className="text-xs font-semibold uppercase tracking-wider mt-1" style={{ color: "#B59890" }}>{stat.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Caregiver Card */}
+          <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: "#EDE3DC", boxShadow: "0 2px 12px rgba(44,24,16,0.06)" }}>
+
+            {/* Profile header */}
+            <div className="px-6 py-5 border-b flex items-center gap-4"
+              style={{ borderColor: "#F5EDE8", background: "#FFF8F5" }}>
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white text-lg font-bold"
+                style={{ background: "linear-gradient(135deg, #C41858, #8B1035)" }}>
+                {myAvailability.name?.charAt(0) || "?"}
               </div>
               <div>
-                <h3 className="text-white font-bold text-xl">{myAvailability.name}</h3>
-                <p className="text-indigo-400 text-sm">Primary Caregiver</p>
+                <h3 className="font-bold text-lg text-[#2C1810]">{myAvailability.name}</h3>
+                <p className="text-sm font-medium" style={{ color: "#C41858" }}>Caregiver</p>
               </div>
             </div>
 
-            <div className="space-y-6">
+            {/* Schedule rows */}
+            <div className="divide-y" style={{ divideColor: "#F5EDE8" }}>
               {days.map((day) => {
                 const daySlots = myAvailability.available_hours?.[day] || [];
-                const fullDay = isAllDay(daySlots);
+                const full = isAllDay(daySlots);
+                const hasSlots = daySlots.length > 0;
 
                 return (
-                  <div key={day} className="flex flex-col sm:flex-row sm:items-center py-2">
-                    <span className="text-gray-400 w-full sm:w-40 text-sm font-medium mb-2 sm:mb-0">
+                  <div key={day} className="flex items-center px-6 py-3.5 gap-4">
+                    <span className="w-28 text-sm font-semibold shrink-0" style={{ color: hasSlots ? "#2C1810" : "#C4A898" }}>
                       {day}
                     </span>
-
                     <div className="flex flex-wrap gap-2">
-                      {fullDay ? (
-                        <div className="px-4 py-1.5 text-xs rounded-lg bg-green-600/10 border border-green-500/30 text-green-400 font-bold">
-                          OPEN 24 HOURS
-                        </div>
-                      ) : daySlots.length > 0 ? (
+                      {full ? (
+                        <span className="px-3 py-1 text-xs rounded-lg font-bold" style={{ background: "rgba(34, 166, 118, 0.12)", color: "#22A676", border: "1px solid rgba(34,166,118,0.25)" }}>
+                          Open All Day
+                        </span>
+                      ) : hasSlots ? (
                         daySlots.map((slot, i) => (
-                          <div
-                            key={i}
-                            className="px-4 py-1.5 text-xs rounded-lg bg-indigo-600/10 border border-indigo-500/30 text-indigo-300 font-medium"
-                          >
-                            {formatTime(slot.start)} – {formatTime(slot.end)}
-                          </div>
+                          <span key={i} className="px-3 py-1 text-xs rounded-lg font-semibold" style={{ background: "rgba(196,24,88,0.09)", color: "#C41858", border: "1px solid rgba(196,24,88,0.2)" }}>
+                            {formatTime(slot.start)} &ndash; {formatTime(slot.end)}
+                          </span>
                         ))
                       ) : (
-                        <span className="text-gray-600 text-sm italic">No availability set</span>
+                        <span className="text-sm italic" style={{ color: "#C4A898" }}>Unavailable</span>
                       )}
                     </div>
                   </div>

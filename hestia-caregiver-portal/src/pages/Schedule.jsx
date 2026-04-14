@@ -2,26 +2,15 @@ import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 
-const days = [
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-  "Sunday",
-];
+const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 const slots = Array.from({ length: 48 }, (_, i) => {
   if (i === 0) return "";
-
   const shifted = i - 1;
   const hour = Math.floor(shifted / 2);
   const minute = shifted % 2 === 0 ? "00" : "30";
-
   const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
   const ampm = hour < 12 ? "AM" : "PM";
-
   return `${displayHour}:${minute} ${ampm}`;
 });
 
@@ -30,34 +19,23 @@ function getWeekStart() {
   const day = today.getDay();
   const diff = today.getDate() - day + (day === 0 ? -6 : 1);
   const monday = new Date(today.setDate(diff));
-
-  const month = monday.getMonth() + 1;
-  const date = monday.getDate();
-
-  return `${month}/${date}`;
+  return `${monday.getMonth() + 1}/${monday.getDate()}`;
 }
 
-// Reverse parser: Turns DB times ("09:00" -> "17:00") back into grid indices (19, 20, 21...)
 const parseScheduleFromDB = (dbSchedule) => {
   const result = {};
   if (!dbSchedule) return result;
-
   Object.entries(dbSchedule).forEach(([day, ranges]) => {
     const indices = [];
     ranges.forEach((range) => {
       const [startH, startM] = range.start.split(":").map(Number);
       const [endH, endM] = range.end.split(":").map(Number);
-
       const startIdx = (startH * 60 + startM) / 30 + 1;
       const endIdx = (endH * 60 + endM) / 30 + 1;
-
-      for (let i = startIdx; i < endIdx; i++) {
-        indices.push(i);
-      }
+      for (let i = startIdx; i < endIdx; i++) indices.push(i);
     });
     result[day] = indices;
   });
-
   return result;
 };
 
@@ -76,57 +54,36 @@ function Schedule() {
       try {
         const { data: authData } = await supabase.auth.getUser();
         const user = authData?.user;
-
         if (!user) return;
-
         const { data, error } = await supabase
-          .from("caregivers")
-          .select("available_hours")
-          .eq("auth_id", user.id)
-          .single();
-
+          .from("caregivers").select("available_hours").eq("auth_id", user.id).single();
         if (error) throw error;
-
-        if (data && data.available_hours) {
-          setSchedule(parseScheduleFromDB(data.available_hours));
-        }
+        if (data?.available_hours) setSchedule(parseScheduleFromDB(data.available_hours));
       } catch (err) {
         console.error("Failed to load existing availability:", err);
       } finally {
         setLoading(false);
       }
     };
-
     fetchExistingSchedule();
   }, []);
 
   const updateSlot = useCallback((day, index, mode) => {
     if (index === 0) return;
-
     setSchedule((prev) => {
       const daySlots = prev[day] || [];
       const exists = daySlots.includes(index);
-
-      if (mode === "add" && !exists) {
-        return { ...prev, [day]: [...daySlots, index] };
-      }
-
-      if (mode === "remove" && exists) {
-        return { ...prev, [day]: daySlots.filter((s) => s !== index) };
-      }
-
+      if (mode === "add" && !exists) return { ...prev, [day]: [...daySlots, index] };
+      if (mode === "remove" && exists) return { ...prev, [day]: daySlots.filter((s) => s !== index) };
       return prev;
     });
   }, []);
 
   const handleMouseDown = (day, index) => {
     if (index === 0) return;
-
     setIsDragging(true);
-
     const isCurrentlySelected = (schedule[day] || []).includes(index);
     const mode = isCurrentlySelected ? "remove" : "add";
-
     setDragMode(mode);
     updateSlot(day, index, mode);
   };
@@ -135,35 +92,21 @@ function Schedule() {
     if (isDragging) updateSlot(day, index, dragMode);
   };
 
-  const handleMouseUp = () => {
-    setIsDragging(false);
-    setDragMode(null);
-  };
+  const handleMouseUp = () => { setIsDragging(false); setDragMode(null); };
 
   const toggleAllDay = (day) => {
     setSchedule((prev) => {
       const currentSlots = prev[day] || [];
-      const isAllDay = currentSlots.length >= 47;
-
-      if (isAllDay) {
-        return { ...prev, [day]: [] };
-      }
-
-      const fullDay = Array.from({ length: 47 }, (_, i) => i + 1);
-      return { ...prev, [day]: fullDay };
+      if (currentSlots.length >= 47) return { ...prev, [day]: [] };
+      return { ...prev, [day]: Array.from({ length: 47 }, (_, i) => i + 1) };
     });
   };
 
   const copyMondayToAll = () => {
     const mondaySlots = schedule["Monday"] || [];
-
     setSchedule((prev) => {
       const updated = { ...prev };
-
-      days.forEach((day) => {
-        if (day !== "Monday") updated[day] = [...mondaySlots];
-      });
-
+      days.forEach((day) => { if (day !== "Monday") updated[day] = [...mondaySlots]; });
       return updated;
     });
   };
@@ -175,222 +118,208 @@ function Schedule() {
       const minutes = (i - 1) * 30;
       const h = Math.floor(minutes / 60);
       const m = minutes % 60;
-
-      const hh = String(h).padStart(2, "0");
-      const mm = String(m).padStart(2, "0");
-
-      return `${hh}:${mm}`;
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
     };
-
     const result = {};
-
     Object.entries(scheduleObj).forEach(([day, currentSlots]) => {
       const sorted = [...currentSlots].sort((a, b) => a - b);
       const ranges = [];
-
-      let start = null;
-      let prev = null;
-
+      let start = null, prev = null;
       sorted.forEach((slot) => {
-        if (start === null) {
-          start = slot;
-          prev = slot;
-          return;
-        }
-
-        if (slot === prev + 1) {
-          prev = slot;
-          return;
-        }
-
-        ranges.push({
-          start: indexToTime(start),
-          end: indexToTime(prev + 1),
-        });
-
-        start = slot;
-        prev = slot;
+        if (start === null) { start = slot; prev = slot; return; }
+        if (slot === prev + 1) { prev = slot; return; }
+        ranges.push({ start: indexToTime(start), end: indexToTime(prev + 1) });
+        start = slot; prev = slot;
       });
-
-      if (start !== null) {
-        ranges.push({
-          start: indexToTime(start),
-          end: indexToTime(prev + 1),
-        });
-      }
-
+      if (start !== null) ranges.push({ start: indexToTime(start), end: indexToTime(prev + 1) });
       result[day] = ranges;
     });
-
     return result;
   };
 
   const handleConfirm = async () => {
     try {
       const { data } = await supabase.auth.getUser();
-      const user = data.user;
-
       const formattedSchedule = formatScheduleForDB(schedule);
-
-      const { error } = await supabase
-        .from("caregivers")
-        .update({
-          available_hours: formattedSchedule,
-        })
-        .eq("auth_id", user.id);
-
+      const { error } = await supabase.from("caregivers")
+        .update({ available_hours: formattedSchedule }).eq("auth_id", data.user.id);
       if (error) throw error;
-
-      navigate("/confirmSchedule", {
-        state: { schedule: formattedSchedule, weekStart },
-      });
+      navigate("/confirmSchedule", { state: { schedule: formattedSchedule, weekStart } });
     } catch (err) {
       console.error("Failed saving availability:", err);
     }
   };
 
+  const totalSelectedSlots = Object.values(schedule).reduce((sum, slots) => sum + slots.length, 0);
+  const totalHours = Math.round((totalSelectedSlots * 0.5) * 10) / 10;
+
   return (
     <div
-      className="min-h-screen bg-[#0f0f0f] text-gray-100 p-8 select-none"
+      className="min-h-screen select-none"
+      style={{ background: "#FAF7F4" }}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-      <div className="flex items-center gap-3 mb-8 w-full">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Availability for Week {weekStart}
-        </h1>
-
-        <div className="relative flex items-center">
-          <button
-            onMouseEnter={() => setShowInfo(true)}
-            onMouseLeave={() => setShowInfo(false)}
-            className="w-5 h-5 flex items-center justify-center text-xs rounded-full border border-gray-500 text-gray-400 hover:text-white transition-colors"
-          >
-            ?
-          </button>
-
-          {showInfo && (
-            <div className="absolute left-8 top-1/2 -translate-y-1/2 w-64 text-xs bg-[#1f1f1f] border border-[#333] rounded-lg p-3 shadow-xl text-gray-300 z-50">
-              Your availability stays the same week to week unless you manually
-              change it. Click and drag to quickly select time slots.
-            </div>
+      {/* Page Header */}
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-[#2C1810]">My Availability</h1>
+          <p className="text-sm mt-1" style={{ color: "#8C6B60" }}>
+            Week of {weekStart} &mdash; Click or drag to set your available hours
+          </p>
+          {totalHours > 0 && (
+            <p className="text-xs mt-1 font-semibold" style={{ color: "#C41858" }}>
+              {totalHours} hours selected this week
+            </p>
           )}
         </div>
 
-        <div className="ml-auto flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="relative">
+            <button
+              onMouseEnter={() => setShowInfo(true)}
+              onMouseLeave={() => setShowInfo(false)}
+              className="w-7 h-7 flex items-center justify-center text-xs rounded-full border transition-colors font-semibold"
+              style={{ borderColor: "#EDE3DC", color: "#B59890", background: "#fff" }}
+            >
+              ?
+            </button>
+            {showInfo && (
+              <div className="absolute right-0 top-9 w-64 text-xs rounded-xl p-3.5 shadow-xl z-50"
+                style={{ background: "#fff", border: "1px solid #EDE3DC", color: "#7A5C52" }}>
+                Your availability carries over week to week unless you manually change it. Click and drag to quickly select or deselect time slots.
+              </div>
+            )}
+          </div>
+
           <button
             onClick={clearAll}
-            className="px-4 py-2 text-gray-400 hover:text-white text-sm font-medium rounded-lg hover:bg-[#2a2a2a]"
+            className="px-4 py-2 text-sm font-medium rounded-xl border transition-colors"
+            style={{ borderColor: "#EDE3DC", color: "#8C6B60", background: "#fff" }}
           >
             Clear All
           </button>
 
           <button
             onClick={copyMondayToAll}
-            className="px-4 py-2 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-sm font-medium rounded-lg border border-[#3a3a3a]"
+            className="px-4 py-2 text-sm font-medium rounded-xl border transition-colors"
+            style={{ borderColor: "#EDE3DC", color: "#8C6B60", background: "#fff" }}
           >
-            Copy Monday to All
+            Copy Mon &rarr; All
           </button>
 
           <button
             onClick={handleConfirm}
             disabled={loading}
-            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+            className="px-5 py-2 text-sm font-semibold rounded-xl text-white transition-all disabled:opacity-50"
+            style={{
+              background: "linear-gradient(135deg, #C41858, #8B1035)",
+              boxShadow: "0 4px 14px rgba(196, 24, 88, 0.3)"
+            }}
           >
-            Confirm
+            Save & Continue
           </button>
         </div>
       </div>
 
+      {/* Schedule Grid */}
       {loading ? (
-        <div className="flex justify-center items-center h-[600px] border border-[#2a2a2a] rounded-xl bg-[#141414] shadow-2xl">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
+        <div className="flex justify-center items-center h-[500px] rounded-2xl border" style={{ background: "#fff", borderColor: "#EDE3DC" }}>
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-8 h-8 rounded-full border-2 border-[#C41858] border-t-transparent animate-spin" />
+            <p className="text-sm" style={{ color: "#8C6B60" }}>Loading your schedule...</p>
+          </div>
         </div>
       ) : (
-        <div className="grid grid-cols-[80px_repeat(7,1fr)] border border-[#2a2a2a] rounded-xl overflow-hidden bg-[#141414] shadow-2xl">
-          <div className="bg-[#141414] border-r border-[#2a2a2a] flex flex-col">
-            <div className="h-14 border-b border-[#2a2a2a] bg-[#1a1a1a]" />
+        <div className="rounded-2xl overflow-hidden border" style={{ borderColor: "#EDE3DC", boxShadow: "0 2px 16px rgba(44,24,16,0.06)" }}>
+          <div className="grid" style={{ gridTemplateColumns: "72px repeat(7, 1fr)", background: "#fff" }}>
 
-            {slots.map((time, i) => {
-              if (i === 0)
-                return (
-                  <div key={i} className="h-4 border-b border-[#2a2a2a]" />
-                );
-
-              const isBottomFullHour = (i - 1) % 2 !== 0;
-              const isTopFullHour = (i - 1) % 2 === 0;
-
-              return (
-                <div
-                  key={i}
-                  className={`h-8 relative flex items-start justify-end pr-3 ${
-                    isBottomFullHour
-                      ? "border-b border-[#2a2a2a]"
-                      : "border-b border-[#1a1a1a]"
-                  }`}
-                >
-                  {isTopFullHour && (
-                    <span className="absolute right-2 text-[11px] text-gray-400 -top-[7px] bg-[#141414] px-1">
-                      {time}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-
-            <div className="h-14 border-t border-[#2a2a2a]" />
-          </div>
-
-          {days.map((day, dayIndex) => (
-            <div
-              key={day}
-              className={`flex flex-col ${
-                dayIndex !== days.length - 1
-                  ? "border-r border-[#2a2a2a]"
-                  : ""
-              }`}
-            >
-              <div className="h-14 flex items-center justify-center border-b border-[#2a2a2a] bg-[#1a1a1a] text-sm">
-                {day}
-              </div>
-
-              {slots.map((_, i) => {
-                if (i === 0)
-                  return (
-                    <div key={i} className="h-4 border-b border-[#2a2a2a]" />
-                  );
-
-                const active = (schedule[day] || []).includes(i);
+            {/* Time column */}
+            <div style={{ background: "#FAF7F4", borderRight: "1px solid #EDE3DC" }}>
+              <div className="h-14 border-b" style={{ borderColor: "#EDE3DC", background: "#FAF3EF" }} />
+              {slots.map((time, i) => {
+                if (i === 0) return <div key={i} className="h-4 border-b" style={{ borderColor: "#EDE3DC" }} />;
                 const isBottomFullHour = (i - 1) % 2 !== 0;
-
+                const isTopFullHour = (i - 1) % 2 === 0;
                 return (
                   <div
                     key={i}
-                    onMouseDown={() => handleMouseDown(day, i)}
-                    onMouseEnter={() => handleMouseEnter(day, i)}
-                    className={`h-8 cursor-pointer ${
-                      isBottomFullHour
-                        ? "border-b border-[#2a2a2a]"
-                        : "border-b border-[#1a1a1a]"
-                    } ${
-                      active
-                        ? "bg-indigo-600 hover:bg-indigo-500"
-                        : "hover:bg-[#222222]"
-                    }`}
-                  />
+                    className="h-8 relative flex items-start justify-end pr-2"
+                    style={{ borderBottom: `1px solid ${isBottomFullHour ? "#EDE3DC" : "#FAF3EF"}` }}
+                  >
+                    {isTopFullHour && (
+                      <span className="absolute right-2 text-[10px] -top-[7px] px-0.5 font-medium"
+                        style={{ color: "#C4A898", background: "#FAF7F4" }}>
+                        {time}
+                      </span>
+                    )}
+                  </div>
                 );
               })}
-
-              <div className="h-14 flex items-center justify-center border-t border-[#2a2a2a] bg-[#1a1a1a]">
-                <button
-                  onClick={() => toggleAllDay(day)}
-                  className="px-3 py-1.5 text-xs font-medium rounded border border-[#3a3a3a] bg-[#2a2a2a] hover:bg-indigo-600"
-                >
-                  All Day
-                </button>
-              </div>
+              <div className="h-12 border-t" style={{ borderColor: "#EDE3DC" }} />
             </div>
-          ))}
+
+            {/* Day columns */}
+            {days.map((day, dayIndex) => (
+              <div
+                key={day}
+                style={{ borderRight: dayIndex !== days.length - 1 ? "1px solid #EDE3DC" : "none" }}
+              >
+                {/* Day header */}
+                <div className="h-14 flex flex-col items-center justify-center border-b"
+                  style={{ borderColor: "#EDE3DC", background: "#FAF3EF" }}>
+                  <span className="text-xs font-bold uppercase tracking-wide" style={{ color: "#7A5C52" }}>
+                    {day.slice(0, 3)}
+                  </span>
+                  {(schedule[day] || []).length > 0 && (
+                    <span className="text-[10px] font-semibold mt-0.5" style={{ color: "#C41858" }}>
+                      {Math.round((schedule[day] || []).length * 0.5)}h
+                    </span>
+                  )}
+                </div>
+
+                {/* Slots */}
+                {slots.map((_, i) => {
+                  if (i === 0) return <div key={i} className="h-4 border-b" style={{ borderColor: "#EDE3DC" }} />;
+                  const active = (schedule[day] || []).includes(i);
+                  const isBottomFullHour = (i - 1) % 2 !== 0;
+                  return (
+                    <div
+                      key={i}
+                      onMouseDown={() => handleMouseDown(day, i)}
+                      onMouseEnter={() => handleMouseEnter(day, i)}
+                      className="h-8 cursor-pointer transition-colors"
+                      style={{
+                        borderBottom: `1px solid ${isBottomFullHour ? "#EDE3DC" : active ? "rgba(196,24,88,0.2)" : "#FAF3EF"}`,
+                        background: active ? "rgba(196, 24, 88, 0.18)" : "transparent"
+                      }}
+                      onMouseOver={(e) => {
+                        if (!active) e.currentTarget.style.background = "rgba(196, 24, 88, 0.06)";
+                      }}
+                      onMouseOut={(e) => {
+                        if (!active) e.currentTarget.style.background = "transparent";
+                      }}
+                    />
+                  );
+                })}
+
+                {/* All Day button */}
+                <div className="h-12 flex items-center justify-center border-t" style={{ borderColor: "#EDE3DC", background: "#FAF3EF" }}>
+                  <button
+                    onClick={() => toggleAllDay(day)}
+                    className="px-3 py-1 text-xs font-semibold rounded-lg border transition-all"
+                    style={{
+                      borderColor: (schedule[day] || []).length >= 47 ? "#C41858" : "#EDE3DC",
+                      color: (schedule[day] || []).length >= 47 ? "#C41858" : "#8C6B60",
+                      background: (schedule[day] || []).length >= 47 ? "rgba(196,24,88,0.08)" : "#fff"
+                    }}
+                  >
+                    All Day
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
